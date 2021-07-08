@@ -57,6 +57,7 @@ type DiskMetricStore struct {
 	persistenceFile string
 	predefinedHelp  map[string]string
 	logger          log.Logger
+	dataExpiration  time.Duration
 }
 
 type mfStat struct {
@@ -82,6 +83,7 @@ func NewDiskMetricStore(
 	persistenceInterval time.Duration,
 	gatherPredefinedHelpFrom prometheus.Gatherer,
 	logger log.Logger,
+	expiration time.Duration,
 ) *DiskMetricStore {
 	// TODO: Do that outside of the constructor to allow the HTTP server to
 	//  serve /-/healthy and /-/ready earlier.
@@ -103,6 +105,8 @@ func NewDiskMetricStore(
 	}
 
 	go dms.loop(persistenceInterval)
+	go dms.clean(expiration)
+
 	return dms
 }
 
@@ -186,6 +190,38 @@ func (dms *DiskMetricStore) GetMetricFamilies() []*dto.MetricFamily {
 		}
 	}
 	return result
+}
+
+// delete expired data
+func (dms *DiskMetricStore) clean(expiration time.Duration) {
+	if expiration == 0 {
+		return
+	}
+
+	for {
+		select {
+		case <-time.After(expiration):
+			var gCnt, mCnt int
+			dms.lock.Lock()
+			for gname, group := range dms.metricGroups {
+				now := time.Now()
+
+				for name, tmf := range group.Metrics {
+					if now.Sub(tmf.Timestamp) > expiration {
+						delete(group.Metrics, name)
+						mCnt += 1
+					}
+				}
+
+				if len(group.Metrics) == 0 {
+					delete(dms.metricGroups, gname)
+					gCnt += 1
+				}
+			}
+			level.Info(dms.logger).Log("msg", "cleaning expired data finished!", "groups", gCnt, "metrics", mCnt)
+			dms.lock.Unlock()
+		}
+	}
 }
 
 // GetMetricFamiliesMap implements the MetricStore interface.

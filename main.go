@@ -70,6 +70,7 @@ func main() {
 		enableAdminAPI      = app.Flag("web.enable-admin-api", "Enable API endpoints for admin control actions.").Default("false").Bool()
 		persistenceFile     = app.Flag("persistence.file", "File to persist metrics. If empty, metrics are only kept in memory.").Default("").String()
 		persistenceInterval = app.Flag("persistence.interval", "The minimum interval at which to write out the persistence file.").Default("5m").Duration()
+		dataExpiration      = app.Flag("data.expiration", "The expiration duration of data").Default("0m").Duration()
 		pushUnchecked       = app.Flag("push.disable-consistency-check", "Do not check consistency of pushed metrics. DANGEROUS.").Default("false").Bool()
 		promlogConfig       = promlog.Config{}
 	)
@@ -98,7 +99,7 @@ func main() {
 		}
 	}
 
-	ms := storage.NewDiskMetricStore(*persistenceFile, *persistenceInterval, prometheus.DefaultGatherer, logger)
+	ms := storage.NewDiskMetricStore(*persistenceFile, *persistenceInterval, prometheus.DefaultGatherer, logger, *dataExpiration)
 
 	// Create a Gatherer combining the DefaultGatherer and the metrics from the metric store.
 	g := prometheus.Gatherers{
